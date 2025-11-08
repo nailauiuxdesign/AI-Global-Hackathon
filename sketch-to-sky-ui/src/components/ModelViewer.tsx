@@ -1,4 +1,13 @@
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  Component,
+  type ReactNode,
+} from 'react'
 import { Canvas } from '@react-three/fiber'
 import {
   Center,
@@ -22,6 +31,41 @@ interface ModelViewerProps {
 }
 
 const colorHelper = new Color()
+
+class ModelErrorBoundary extends Component<{
+  onError?: (error: Error) => void
+  children: ReactNode
+}> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error) {
+    if (this.props.onError) {
+      this.props.onError(error)
+    }
+    console.error('ModelViewer failed to load model:', error)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <Html center>
+          <div className="flex max-w-xs flex-col items-center gap-2 rounded-2xl border border-rose-500/40 bg-rose-950/70 px-5 py-4 text-center text-sm text-rose-100 shadow-xl shadow-rose-900/40 backdrop-blur">
+            <span className="text-base">⚠️</span>
+            <p className="font-semibold">Unable to load 3D model</p>
+            <p className="text-xs text-rose-200/80">
+              {this.state.error.message || 'The model file could not be retrieved.'}
+            </p>
+          </div>
+        </Html>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const LoaderOverlay = () => {
   const { progress } = useProgress()
@@ -110,6 +154,7 @@ export const ModelViewer = ({
 }: ModelViewerProps) => {
   const [isModelReady, setIsModelReady] = useState(false)
   const [screenshotting, setScreenshotting] = useState(false)
+  const [loadError, setLoadError] = useState<Error | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
 
   useEffect(
@@ -127,6 +172,7 @@ export const ModelViewer = ({
 
   useEffect(() => {
     setIsModelReady(false)
+    setLoadError(null)
   }, [modelUrl])
 
   const handleScreenshot = useCallback(() => {
@@ -160,7 +206,14 @@ export const ModelViewer = ({
     )
   }
 
-  const showOverlay = isLoading || !isModelReady || screenshotting
+  const showOverlay = loadError !== null || isLoading || !isModelReady || screenshotting
+  const overlayMessage = loadError
+    ? 'Failed to load model. Try regenerating or check the model URL.'
+    : screenshotting
+      ? 'Preparing capture...'
+      : isLoading
+        ? 'Generating model...'
+        : 'Loading 3D assets...'
 
   return (
     <motion.div
@@ -180,22 +233,29 @@ export const ModelViewer = ({
       >
         <ambientLight intensity={0.45} />
         <directionalLight position={[5, 10, 7.5]} intensity={1.6} castShadow />
-        <Suspense fallback={<LoaderOverlay />}>
-          <AircraftModel
-            url={modelUrl}
-            transform={transform}
-            onReady={() => setIsModelReady(true)}
-          />
-          <Environment preset="sunset" />
-          <ContactShadows
-            position={[0, -1.2, 0]}
-            opacity={0.5}
-            width={12}
-            height={12}
-            blur={1.3}
-            far={6}
-          />
-        </Suspense>
+        <ModelErrorBoundary
+          key={modelUrl ?? 'empty'}
+          onError={(error) => {
+            setLoadError(error)
+          }}
+        >
+          <Suspense fallback={<LoaderOverlay />}>
+            <AircraftModel
+              url={modelUrl}
+              transform={transform}
+              onReady={() => setIsModelReady(true)}
+            />
+            <Environment preset="sunset" />
+            <ContactShadows
+              position={[0, -1.2, 0]}
+              opacity={0.5}
+              width={12}
+              height={12}
+              blur={1.3}
+              far={6}
+            />
+          </Suspense>
+        </ModelErrorBoundary>
         <OrbitControls
           enablePan
           enableZoom
@@ -234,10 +294,14 @@ export const ModelViewer = ({
       </div>
 
       {showOverlay && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45 backdrop-blur-sm">
-          <div className="flex items-center gap-3 rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-lg shadow-slate-900/20">
-            <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-            {screenshotting ? 'Preparing capture...' : isLoading ? 'Generating model...' : 'Loading 3D assets...'}
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-full bg-slate-900/90 px-4 py-2 text-sm font-medium text-slate-200 shadow-lg shadow-sky-900/30">
+            {loadError ? (
+              <span className="text-base text-rose-300">⚠️</span>
+            ) : (
+              <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+            )}
+            <span className="max-w-xs text-center text-sm">{overlayMessage}</span>
           </div>
         </div>
       )}
