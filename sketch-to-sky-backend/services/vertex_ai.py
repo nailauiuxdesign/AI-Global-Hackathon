@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict, Tuple
 
 from google.api_core.exceptions import GoogleAPICallError
-from google.cloud import aiplatform
+# from google.cloud import aiplatform
 
 PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
 LOCATION = os.getenv("GOOGLE_LOCATION", "us-central1")
